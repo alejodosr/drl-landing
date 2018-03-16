@@ -1,0 +1,5 @@
+import sys
+sys.path.insert(0, '/home/alejandro/workspace/robot_reinforcement_learning/src/robot_reinforcement_learning/rl_agent')
+from scripts.agents.test import dummy
+
+print "Hello"

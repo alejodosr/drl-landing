@@ -1,0 +1,18 @@
+#IncludeRegexLine: ^[ 	]*#[ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/alejandro/workspace/robot_reinforcement_learning/src/robot_reinforcement_learning/code-rl-environment-gazebo/rl_boost_python/src/sources/rl_shm_python.cpp
+boost/interprocess/shared_memory_object.hpp
+-
+boost/interprocess/mapped_region.hpp
+-
+boost/interprocess/sync/interprocess_semaphore.hpp
+-
+boost/python.hpp
+-
+

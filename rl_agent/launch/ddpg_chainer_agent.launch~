@@ -1,0 +1,28 @@
+<!-- Launches: rl_agent -->
+<launch>
+	<arg name="rl_boost_python_path"			default="$(find rl_agent)/../code-rl-environment-gazebo/rl_boost_python/build" />
+	<arg name="rl_python_distpackages_path"			default="$(find rl_agent)/../../../devel/lib/python2.7/dist-packages" />
+	<arg name="exp_logger_path"				default="$(find rl_agent)/scripts/results/" />
+	<arg name="actor_networks_path"				default="$(find rl_agent)/scripts/saved_actor_networks/" />
+    	<arg name="configs_path"				default="$(find rl_agent)/configs/config.ini" />
+	<arg name="agent_type"					default="ddpg_chainer" />
+	<arg name="num_episodes"				default="10000" />
+	<arg name="num_tests"					default="10" />
+	<arg name="num_episodes_between_logs"			default="200" />
+	<arg name="frecuency"					default="20.0" /> <!-- frecuency of the Agent in Hz -->
+	<arg name="enable_iteration_flag"			default="False" /> <!-- To Iterate the PAUSED simulation  -->
+	
+	<node pkg="rl_agent" name="agent" type="agent.py" output="screen">
+		<param name="exp_logger_path"					value="$(arg exp_logger_path)" 				type="string"/>
+		<param name="actor_networks_path"				value="$(arg actor_networks_path)" 			type="string"/>
+		<param name="configs_path"					value="$(arg configs_path)" 				type="string"/>	
+		<param name="agent_type"					value="$(arg agent_type)" 				type="string"/>			
+		<param name="rl_boost_python_path"				value="$(arg rl_boost_python_path)" 			type="string"/>
+		<param name="rl_python_distpackages_path"			value="$(arg rl_python_distpackages_path)" 		type="string"/>
+		<param name="num_episodes"					value="$(arg num_episodes)"				type="int"/>		
+		<param name="num_episodes_between_logs"				value="$(arg num_episodes_between_logs)"		type="int"/>
+		<param name="num_tests"						value="$(arg num_tests)"				type="int"/>
+		<param name="frecuency"						value="$(arg frecuency)"    				type="double"/>
+    		<param name="enable_iteration_flag"				value="$(arg enable_iteration_flag)"    		type="bool"/>                     
+	</node>
+</launch>

@@ -1,0 +1,387 @@
+#!/usr/bin/env python
+
+import sys
+
+import rospy
+from sensor_msgs.msg import Image
+from rl_agent.srv import *
+import cv2
+from cv_bridge import CvBridge
+import matplotlib.pyplot as plt
+import time
+from experiment_logger import *
+from trained_actor_network import *
+#from trained_actor_network_3hidden import *  #For testing 3 hidden-layered Actor Network
+
+rl_boost_python_path = rospy.get_param('/gym_ddpg_agent/rl_boost_python_path')
+rl_python_distpackages_path = rospy.get_param('/gym_ddpg_agent/rl_python_distpackages_path')
+sys.path.insert(0, rl_boost_python_path)
+sys.path.insert(1, rl_python_distpackages_path)
+
+from librl_shm_python import RlSharedMemory
+import filter_env
+from ddpg import *
+import gc
+gc.enable()
+
+
+
+DEBUG_SERVICES_MODE = False
+DEBUG_MODE = False
+TEST_MODE = True
+ENABLE_ITERATION = False
+STATE_BASED_ON_IMAGE = False
+
+configs_path = rospy.get_param('/gym_ddpg_agent/configs_path')
+exp_logger_path = rospy.get_param('/gym_ddpg_agent/exp_logger_path')
+actor_networks_path = rospy.get_param('/gym_ddpg_agent/actor_networks_path')
+EPISODES = rospy.get_param('/gym_ddpg_agent/num_episodes')
+NUM_EPISODES_BETWEEN_LOGS = rospy.get_param('/gym_ddpg_agent/num_episodes_between_logs')
+TEST = rospy.get_param('/gym_ddpg_agent/num_tests')
+FREQUENCY = rospy.get_param('/gym_ddpg_agent/frecuency')
+
+print 'NUM_EPISODES: ', EPISODES
+print 'NUM_EPISODES_LOGS', NUM_EPISODES_BETWEEN_LOGS
+print 'NUM_TESTS: ', TEST
+print 'FREQUENCY: ', FREQUENCY
+
+#~ EPISODES = 6000
+#~ TEST = 10
+#~ FREQUENCY = 25.0 # Hz, enabled if ENABLE_ITERATION is False
+
+
+def experiment_record_client(num_episode, path_name):
+    rospy.wait_for_service('experiment_record_srv')
+    try:
+        experiment_record_srv = rospy.ServiceProxy('experiment_record_srv', RecordExperimentSrv)
+
+        request = RecordExperimentSrvRequest()
+        request.episode_num = num_episode
+        request.path_dir = path_name
+        request.record_with_camera = True
+
+        experiment_record_srv(request)
+
+    except rospy.ServiceException, e:
+        print "Service call failed: %s" % e
+
+
+def environment_render_client():
+    rospy.wait_for_service('environment_render')
+    try:
+        environment_render = rospy.ServiceProxy('environment_render', RenderEnvSrv)
+        resp = environment_render()
+        
+        image_response = resp.img
+        
+        cv_bridge_obj = CvBridge()
+        image_np = cv_bridge_obj.imgmsg_to_cv2(resp.img, "rgb8")
+        print '------- Response (env render) -------'
+        print 'resp.img (type): ', type(image_np)
+        
+        return image_np
+    except rospy.ServiceException, e:
+        print "Service call failed: %s"%e
+        
+
+def environment_reset_client():
+    rospy.wait_for_service('rl_env_reset_srv')
+    try:
+        environment_reset = rospy.ServiceProxy('rl_env_reset_srv', ResetEnvSrv)
+        resp = environment_reset()
+        
+        print '------- Response (env reset) -------'
+        print 'resp.state: ', resp.state
+        
+        image_response = resp.img_state
+        if(len(image_response) !=0):
+            cv_bridge_obj = CvBridge()
+            image_ini = cv_bridge_obj.imgmsg_to_cv2(image_response[0], "mono8")
+            images_array = np.empty((image_ini.shape[0], image_ini.shape[1], len(image_response)))
+            print 'len(image_response): ', len(image_response)
+            for i in range(len(image_response)):
+                image_np = cv_bridge_obj.imgmsg_to_cv2(image_response[i], "mono8")
+                image_np_norm = np.multiply(image_np, 1.0 / 255.0)
+                images_array[:,:,i] = np.reshape(image_np_norm, (image_np_norm.shape[0], image_np_norm.shape[1]))
+            print 'images_array (shape): ', images_array.shape
+            return resp.state, images_array
+        else:
+            return resp.state, image_response
+    except rospy.ServiceException, e:
+        print "Service call failed: %s"%e
+        
+
+def environment_step_client(action):
+    #print 'waiting for server (step_client)...'
+    rospy.wait_for_service('rl_env_step_srv')
+    try:
+        environment_step = rospy.ServiceProxy('rl_env_step_srv', AgentSrv)
+        resp = environment_step(action)
+        
+        if DEBUG_SERVICES_MODE:
+            print '------- Response (env step) -------'
+            print 'resp.reward: ', resp.reward
+            print 'resp.state: ', resp.obs_real
+            print 'resp.terminal_state: ', resp.terminal_state
+            print 'resp.img (type): ', type(image_np)
+        
+        image_response = resp.img
+        if(len(image_response) !=0):
+            cv_bridge_obj = CvBridge()
+            image_ini = cv_bridge_obj.imgmsg_to_cv2(image_response[0], "mono8")
+            images_array = np.empty((image_ini.shape[0], image_ini.shape[1], len(image_response)))
+            for i in range(len(image_response)):
+                image_np = cv_bridge_obj.imgmsg_to_cv2(image_response[i], "mono8")
+                image_np_norm = np.multiply(image_np, 1.0 / 255.0)
+                images_array[:,:,i] = np.reshape(image_np_norm, (image_np_norm.shape[0], image_np_norm.shape[1]))
+            return resp.obs_real, resp.reward, resp.terminal_state, images_array
+        else:
+            return resp.obs_real, resp.reward, resp.terminal_state, image_response
+    except rospy.ServiceException, e:
+        print "Service call failed: %s"%e
+        
+        
+def environment_dimensionality_client():
+    print 'waiting for server (dimensionality_client)...'
+    rospy.wait_for_service('rl_env_dimensionality_srv')
+    try:
+        environment_dimensionality = rospy.ServiceProxy('rl_env_dimensionality_srv', EnvDimensionalitySrv)
+        resp = environment_dimensionality()
+        
+        if DEBUG_SERVICES_MODE:
+            print '------- Response (env dimensionality) -------'
+            print 'resp.state_dim_lowdim: ', resp.state_dim_lowdim
+            print 'resp.state_dim_img: ', resp.state_dim_img
+            print 'resp.state_min: ', resp.state_min
+            print 'resp.state_max: ', resp.state_max
+            print 'resp.action_dim: ', resp.action_dim
+            print 'resp.action_min: ', resp.action_min
+            print 'resp.action_max: ', resp.action_max
+            print 'resp.num_iterations: ', resp.num_iterations
+        
+        return resp.state_dim_lowdim, resp.state_dim_img, resp.state_min, resp.state_max, resp.action_dim, resp.action_min, resp.action_max, resp.num_iterations
+    except rospy.ServiceException, e:
+        print "Service call failed: %s"%e
+
+
+def Init():
+    state_dim_lowdim, state_dim_img, state_min, state_max, action_dim, action_min, action_max, num_iterations = environment_dimensionality_client()
+
+    return [state_dim_lowdim, state_dim_img, state_min, state_max, action_dim, action_min, action_max, num_iterations]
+
+def main():
+    env_info_list = Init()
+    print 'Env Info List:'
+    print env_info_list
+
+    if not TEST_MODE:
+        agent = DDPG(env_info_list, configs_path)
+    else:
+        # Define test agent
+        agent = TrainedActorNetwork(env_info_list, actor_networks_path)
+
+    if not ENABLE_ITERATION:
+        r = rospy.Rate(FREQUENCY)
+
+
+    # Initialize shared memory object
+    rl_shm = RlSharedMemory()
+
+
+    # Include variables episode, reward, total_reward, q_value_critic, total_q_value_critic, state, action
+    data_variables = ['episode', 'reward', 'total_reward', 'q_value_critic', 'total_q_value_critic']
+    STATE_ZERO = []
+    ACTION_ZERO = []
+    # Fill with state
+    for i in range(0, env_info_list[0]):
+        data_variables.append('state_' + str(i))
+        # Create ZERO vectors
+        STATE_ZERO.append(0)
+    # Fill with action
+    for i in range(0, env_info_list[4]):
+        data_variables.append('action_' + str(i))
+        # Create ZERO vectors
+        ACTION_ZERO.append(0)
+
+    # Create logger
+    exp_log = ExperimentLogger(TEST_MODE, exp_logger_path, data_variables)
+
+
+    # Init flags
+    #remove_camera = False
+
+    for episode in xrange(EPISODES):
+        if ENABLE_ITERATION:
+            rl_shm.CallAction()
+
+        state_resp, img_resp = environment_reset_client()
+        if not STATE_BASED_ON_IMAGE:
+            state = np.array(state_resp)
+        else:
+            state = img_resp
+
+
+        if not TEST_MODE:
+
+            print "episode:",episode
+
+            total_reward = 0
+            total_q_value_critic = 0.0
+
+
+            ############## Train ##############
+            for step in xrange(env_info_list[-1]):
+
+                #print 'Calling Render...'
+                #image_state = environment_render_client()
+                #image_state_resized = cv2.resize(image_state, None, fx=0.16, fy=0.16, interpolation = cv2.INTER_CUBIC)
+                #cv2.imshow('image_state', image_state)
+                #cv2.waitKey(1)
+                #print 'image_state (type): ', type(image_state)
+                #print 'image_state (shape): ', image_state.shape
+                action = agent.noise_action(state)
+
+                if DEBUG_MODE:
+                    print 'action (type): ', type(action)
+                    print 'action (shape): ', action.shape
+                    print 'action (lenght): ', len(action)
+                    print 'action (dim): ', action.ndim
+
+
+                #time.sleep(5)
+                if ENABLE_ITERATION:
+                    rl_shm.CallAction()
+                next_state_resp, reward, done, img_state = environment_step_client(action)
+                if not STATE_BASED_ON_IMAGE:
+                    next_state = np.array(next_state_resp)
+                else:
+                    next_state = img_state
+                    
+                #~ print 'next_state (type): ', type(next_state)
+                #~ print 'next_state (shape): ', next_state.shape                
+                #~ print 'img_state (type): ', type(img_state)
+                #~ print 'img_state (shape): ', img_state.shape
+                #~ cv2.imshow('image_state', img_state)
+                #~ cv2.waitKey(1)
+
+                if DEBUG_MODE:
+                    print 'max steps: ', env_info_list[-1]
+                    print 'step: ', step
+                    print 'reward: ', reward
+                    print 'state (type): ', type(state)
+                    print 'state (shape): ', state.shape
+                    print 'state (lenght): ', len(state)
+                    print 'state (dim): ', state.ndim
+                    for i in range(len(state)):
+                        print str(state[i]) + " ; "
+
+                total_reward += reward
+
+                agent.perceive(state, action, reward, next_state, done)
+                state = next_state
+                #print 'Q_Value (critic network): ', agent.average_q_value_critic
+                q_value_critic = agent.average_q_value_critic
+                total_q_value_critic += q_value_critic
+                if done:
+                    break
+
+
+                if not ENABLE_ITERATION:
+                    r.sleep()
+
+                if episode % NUM_EPISODES_BETWEEN_LOGS == 0:
+                    # Log to file
+                    data_variables = [episode, reward, total_reward, q_value_critic, total_q_value_critic]
+                    data_variables.extend(state)
+                    data_variables.extend(action)
+                    exp_log.log_steps_train(data_variables)
+
+            # Log to file
+            #exp_log.log_train(episode, total_reward, total_q_value_critic)
+            data_variables = [episode, 0, total_reward, 0, total_q_value_critic]
+            data_variables.extend(STATE_ZERO)
+            data_variables.extend(ACTION_ZERO)
+            exp_log.log_train(data_variables)
+
+        
+        ############## Test ##############
+        if episode % NUM_EPISODES_BETWEEN_LOGS == 0 and episode >= 100 or TEST_MODE:
+            total_reward = 0
+            for i in xrange(TEST):
+
+                print "Test episode: ", episode + i
+
+                if i == 0 and not TEST_MODE:
+                    agent.actor_network.save_network(episode + i, exp_log.results_path + exp_log.mydir)
+
+                accum_reward = 0;
+
+                if not TEST_MODE:
+                    # Record video
+                    print "Recording video: ", episode + i, ".avi"
+                    exp_log.record_video(episode + i)
+
+                if ENABLE_ITERATION:
+                    rl_shm.CallAction()
+                # if i == 0 or remove_camera:
+                #     experiment_record_client(episode + i, exp_log.get_path_resutls())
+                #     if not remove_camera:
+                #         remove_camera = True
+                #     else:
+                #         remove_camera = False
+
+                state_resp, img_resp = environment_reset_client()
+                if not STATE_BASED_ON_IMAGE:
+                    state = np.array(state_resp)
+                else:
+                    state = img_resp
+
+                for j in xrange(env_info_list[-1]):
+                    #env.render()
+                    action = agent.action(state) # direct action for test
+                    if ENABLE_ITERATION:
+                        rl_shm.CallAction()
+                    state_resp, reward, done, image_state = environment_step_client(action)
+                    if not STATE_BASED_ON_IMAGE:
+                        state = np.array(state_resp)
+                    else:
+                        state = img_state
+                    total_reward += reward
+                    accum_reward += reward
+
+                    if i==0:
+                        data_variables = [episode, reward, accum_reward, 0, 0]
+                        data_variables.extend(state)
+                        data_variables.extend(action)
+                        exp_log.log_steps_test(data_variables)
+
+                    if done:
+                        break
+
+                    # Check time
+                    if not ENABLE_ITERATION:
+                        r.sleep()
+
+                if not TEST_MODE:
+                    # Stop video
+                    exp_log.stop_video()
+
+                # Log to file
+                data_variables = [episode, 0, accum_reward, 0, 0]
+                data_variables.extend(STATE_ZERO)
+                data_variables.extend(ACTION_ZERO)
+                exp_log.log_test(data_variables)
+
+
+
+            average_reward = total_reward/TEST
+            print 'episode: ',episode,'Evaluation Average Reward:', average_reward
+
+
+if __name__ == '__main__':
+    rospy.init_node('environment_step_client')
+    main()
+
+
+
+

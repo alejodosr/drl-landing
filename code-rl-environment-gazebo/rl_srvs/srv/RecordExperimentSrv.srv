@@ -1,0 +1,4 @@
+uint64 episode_num
+string path_dir
+bool record_with_camera
+---

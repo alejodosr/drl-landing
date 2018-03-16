@@ -1,0 +1,6 @@
+float32[] action
+---
+float32[] obs_real
+float32 reward
+bool terminal_state
+sensor_msgs/Image[] img

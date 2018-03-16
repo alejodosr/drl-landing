@@ -1,0 +1,9 @@
+from rl_agent.scripts.agents.test import agent_ros_module  # NOQA
+from rl_agent.scripts.agents.test import agent_ros_module_class  # NOQA
+from rl_agent.scripts.agents.test import gym_ddpg_server  # NOQA
+from rl_agent.scripts.agents.test import gym_ddpg_server_class  # NOQA
+
+
+
+
+

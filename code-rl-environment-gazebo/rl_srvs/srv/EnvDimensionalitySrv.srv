@@ -1,0 +1,10 @@
+
+---
+uint8 state_dim_lowdim
+uint64[] state_dim_img
+float32[] state_min
+float32[] state_max
+uint8 action_dim
+float32[] action_min
+float32[] action_max
+uint64 num_iterations
