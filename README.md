@@ -32,4 +32,4 @@ Build the workspace:
 
 # Usage
 
-Comming soon..
+Coming soon..
