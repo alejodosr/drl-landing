@@ -24,11 +24,25 @@ Create workspace and clone respository:
 
 `git clone https://github.com/alejodosr/drl-landing`
 
+Build ArUco library:
+
+`cd ~/workspace/drl-landing/src/drl-landing/code-rl-environment-gazebo/rl_libs/aruco304`
+
+`mkdir build`
+
+`cd build`
+
+`cmake ..`
+
+`make - j4`
+
 Build the workspace:
 
 `cd ~/workspace/drl-landing`
 
 `catkin_make`
+
+(Download and install Parrot Bebop 2 Autonomy Driver under `~/workspace/drl-landing/src` - https://github.com/AutonomyLab/bebop_autonomy -)
 
 # Usage
 
